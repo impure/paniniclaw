@@ -88,7 +88,9 @@ func (m *MemoryManager) Run() {
 			if summary == "" {
 				log.Printf("[memory] Nothing important in session for %s/%s, marking as processed", provider, conversationID)
 				sessionEnd := sessionMsgs[len(sessionMsgs)-1].CreatedAt
-				m.storeSummary(provider, conversationID, sessionEnd, "")
+				if err := m.storeSummary(provider, conversationID, sessionEnd, ""); err != nil {
+					log.Printf("[memory] Failed to store empty summary for %s/%s: %v", provider, conversationID, err)
+				}
 			} else {
 				sessionEnd := sessionMsgs[len(sessionMsgs)-1].CreatedAt
 				if err := m.storeSummary(provider, conversationID, sessionEnd, summary); err != nil {
@@ -199,6 +201,9 @@ JSON:`, transcript.String())
 
 	result = strings.TrimSpace(result)
 
+	// Log raw result for debugging
+	log.Printf("[memory] Raw LLM result (first 200 chars): %s", result[:min(len(result), 200)])
+
 	// Try to parse as JSON
 	var parsed struct {
 		Points []string `json:"points"`
@@ -214,22 +219,49 @@ JSON:`, transcript.String())
 		return strings.TrimSuffix(sb.String(), "\n"), nil
 	}
 
-	return result, nil
+	log.Printf("[memory] Failed to parse JSON from LLM response: %v", err)
+	return "", nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // storeSummary appends a summary entry to the memory markdown file.
 func (m *MemoryManager) storeSummary(provider, conversationID string, sessionEnd time.Time, summary string) error {
 	path := filepath.Join(m.memoryDir, m.filename(provider, conversationID))
 
+	log.Printf("[memory] storeSummary: opening %s for append (summary len=%d)", path, len(summary))
+
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
+		log.Printf("[memory] storeSummary: failed to open: %v", err)
 		return err
 	}
 	defer f.Close()
 
 	timestamp := sessionEnd.Format("2006-01-02 15:04:05")
-	entry := fmt.Sprintf("\n## Summary — %s\n%s\n", timestamp, summary)
+	if summary == "" {
+		entry := fmt.Sprintf("\n## Summary — %s\n*Nothing important*\n", timestamp)
+		n, err := f.WriteString(entry)
+		log.Printf("[memory] storeSummary: wrote empty summary (%d bytes): %v", n, err)
+		return err
+	}
 
-	_, err = f.WriteString(entry)
+	entry := fmt.Sprintf("\n## Summary — %s\n%s\n", timestamp, summary)
+	n, err := f.WriteString(entry)
+	log.Printf("[memory] storeSummary: wrote %d bytes, err=%v", n, err)
+
+	// Also check file size after write
+	if err == nil {
+		info, _ := os.Stat(path)
+		if info != nil {
+			log.Printf("[memory] storeSummary: file size now %d bytes", info.Size())
+		}
+	}
+
 	return err
 }
