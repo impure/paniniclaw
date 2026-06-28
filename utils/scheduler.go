@@ -20,6 +20,7 @@ type Job struct {
 	Schedule string `json:"schedule" toml:"schedule"`
 	Name     string `json:"name" toml:"name"`
 	Task     string `json:"task" toml:"task"`
+	Notify   bool   `json:"notify,omitempty" toml:"notify,omitempty"`
 }
 
 type LLMClient interface {
@@ -132,11 +133,11 @@ func (s *Scheduler) RunTaskByName(name string) error {
 	}
 	s.setTask(displayName)
 
-	go s.runTask(displayName, job.Task, job.Model)
+	go s.runTask(displayName, job.Task, job.Model, job.Notify)
 	return nil
 }
 
-func (s *Scheduler) runTask(name, prompt, model string) {
+func (s *Scheduler) runTask(name, prompt, model string, notify bool) {
 	defer s.EndTask()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -146,15 +147,17 @@ func (s *Scheduler) runTask(name, prompt, model string) {
 
 	msgCount := 0
 	result, err := s.client.Chat(ctx, prompt, model, func(msg string) {
-		msgCount++
-		var full string
-		if msgCount == 1 {
-			full = fmt.Sprintf("📋 Task %q:\n%s", name, msg)
-		} else {
-			full = fmt.Sprintf("📋 Task %q (continued):\n%s", name, msg)
-		}
-		if s.send != nil {
-			s.send(s.chatId, full)
+		if notify {
+			msgCount++
+			var full string
+			if msgCount == 1 {
+				full = fmt.Sprintf("📋 Task %q:\n%s", name, msg)
+			} else {
+				full = fmt.Sprintf("📋 Task %q (continued):\n%s", name, msg)
+			}
+			if s.send != nil {
+				s.send(s.chatId, full)
+			}
 		}
 	})
 	if err != nil {
@@ -162,24 +165,31 @@ func (s *Scheduler) runTask(name, prompt, model string) {
 		errStr := err.Error()
 		if strings.HasPrefix(errStr, "task failed: ") {
 			reason := strings.TrimPrefix(errStr, "task failed: ")
-			errMsg := fmt.Sprintf("❌ Task %q failed: %s", name, reason)
-			log.Printf("[scheduler] %s", errMsg)
+			debrief := fmt.Sprintf("❌ Task %q failed: %s", name, reason)
+			log.Printf("[scheduler] %s", debrief)
 			if s.send != nil {
-				s.send(s.chatId, errMsg)
+				s.send(s.chatId, debrief)
 			}
 		} else {
-			errMsg := fmt.Sprintf("⚠️ Task %q failed: %v", name, err)
-			log.Printf("[scheduler] %s", errMsg)
+			debrief := fmt.Sprintf("⚠️ Task %q error: %v", name, err)
+			log.Printf("[scheduler] %s", debrief)
 			if s.send != nil {
-				s.send(s.chatId, errMsg)
+				s.send(s.chatId, debrief)
 			}
 		}
 	} else {
-		log.Printf("[scheduler] Task %q completed", name)
-		if s.send != nil {
-			s.send(s.chatId, fmt.Sprintf("✅ Task %q completed.", name))
+		// Summarize into a brief debrief
+		debrief := fmt.Sprintf("✅ Task %q completed.", name)
+		// Truncate result for debrief if needed
+		if len(result) > 500 {
+			debrief = fmt.Sprintf("✅ Task %q completed.\n\n%s...", name, result[:500])
+		} else if result != "" {
+			debrief = fmt.Sprintf("✅ Task %q completed.\n\n%s", name, result)
 		}
-		_ = result
+		log.Printf("[scheduler] %s", debrief)
+		if s.send != nil {
+			s.send(s.chatId, debrief)
+		}
 	}
 }
 
@@ -240,7 +250,7 @@ func (s *Scheduler) checkAndRun() {
 			}
 			s.setTask(displayName)
 
-			go s.runTask(displayName, job.Task, job.Model)
+			go s.runTask(displayName, job.Task, job.Model, job.Notify)
 		}
 
 		s.mu.Lock()
