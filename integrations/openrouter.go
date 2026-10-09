@@ -21,7 +21,7 @@ type OpenRouter struct {
 func NewOpenRouter(apiKey string) *OpenRouter {
 	return &OpenRouter{
 		apiKey: apiKey,
-		model:  "deepseek/deepseek-v4-flash",
+		model:  "deepseek/deepseek-v4.1-flash",
 	}
 }
 
@@ -40,13 +40,13 @@ type responseFormatConfig struct {
 }
 
 type chatRequest struct {
-	Model          string               `json:"model"`
-	Messages       []utils.ChatMessage  `json:"messages"`
-	Reasoning      *reasoningConfig     `json:"reasoning,omitempty"`
+	Model          string                `json:"model"`
+	Messages       []utils.ChatMessage   `json:"messages"`
+	Reasoning      *reasoningConfig      `json:"reasoning,omitempty"`
 	ResponseFormat *responseFormatConfig `json:"response_format,omitempty"`
-	MaxTokens      int                  `json:"max_tokens,omitempty"`
-	Tools          []Tool               `json:"tools,omitempty"`
-	Provider       *providerConfig      `json:"provider,omitempty"` // Added for provider configuration
+	MaxTokens      int                   `json:"max_tokens,omitempty"`
+	Tools          []Tool                `json:"tools,omitempty"`
+	Provider       *providerConfig       `json:"provider,omitempty"` // Added for provider configuration
 }
 
 type chatResponse struct {
@@ -103,7 +103,7 @@ func makeSystemMessage(user utils.User, chatId string) (utils.ChatMessage, error
 	if memErr == nil {
 		memoryContent = string(memoryBytes)
 	}
-	
+
 	return utils.ChatMessage{
 		Role:    "system",
 		Content: fmt.Sprintf("directives/core.md: %s\n\ndirectives/telegram.md: %s\n\nuser: %s\n\nnotes/general.md: %s\n\nnotes/user%s.md: %s\n\nmemory/%s_%s.md: %s\n", soulBytes, telegramBytes, userJson, generalBytes, strconv.Itoa(user.Id), userNotesBytes, provider, chatId, memoryContent),
