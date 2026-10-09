@@ -77,6 +77,18 @@ Write a blog post...
 
 This is useful if your default model is a cheaper/faster one (e.g. for simple queries) and you want certain tasks — like writing — to use a more capable model. It's also handy if your primary model does aggressive prompt caching; you can route tasks that shouldn't pollute the cache to a different model.
 
+By default, tasks only send a single debrief message when they complete (success or failure). If you want real-time per-message updates as the task runs, add `notify = true`:
+
+```toml
+schedule = "53 20 * * *"
+name = "Blog Post Writer"
+model = "qwen/qwen3.7-plus"
+notify = true
+task = """
+Write a blog post...
+"""
+```
+
 ## Running Tasks On Demand
 
 You can also trigger a task immediately by sending the `/run_task` command to the bot:
